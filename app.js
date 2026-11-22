@@ -1,0 +1,36 @@
+(() => {
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const state = {page:"home",authMode:"login",user:null,guest:localStorage.getItem("hv_guest")==="yes",posts:JSON.parse(localStorage.getItem("hv_posts")||"[]"),client:null};
+const systems = [
+["Skeletal system","Bones provide support, protect organs and work with muscles to enable movement. This overview is educational; use a validated anatomy atlas for detailed structures."],
+["Muscular system","Skeletal, smooth and cardiac muscle tissues have different roles. Skeletal muscles create voluntary movement and help maintain posture."],
+["Cardiovascular system","The heart and blood vessels circulate blood, transporting oxygen, nutrients and waste products."],
+["Respiratory system","Airways and lungs support gas exchange. The diaphragm and other respiratory muscles drive ventilation."],
+["Digestive system","The digestive tract processes food and absorbs nutrients, supported by organs such as the liver and pancreas."],
+["Nervous system","The brain, spinal cord and peripheral nerves coordinate sensation, movement and many body functions."],
+["Urinary system","Kidneys filter blood and help regulate fluid, electrolyte and acid-base balance."],
+["Integumentary system","Skin and its appendages form a protective barrier and contribute to temperature regulation and sensation."]
+];
+function go(page){state.page=page;$$(".page").forEach(p=>p.classList.toggle("active",p.id==="page-"+page));$$(".nav").forEach(n=>n.classList.toggle("active",n.dataset.page===page));window.scrollTo({top:0,behavior:"smooth"});}
+$$(".nav").forEach(b=>b.addEventListener("click",()=>go(b.dataset.page)));
+$$("[data-go]").forEach(b=>b.addEventListener("click",()=>go(b.dataset.go)));
+$$(".module-card").forEach(c=>c.addEventListener("click",e=>{if(!e.target.closest("button"))go(c.dataset.card)}));
+$("#year").textContent=new Date().getFullYear();
+systems.forEach(([name,desc],i)=>{const b=document.createElement("button");b.className="system-btn";b.textContent=name;b.addEventListener("click",()=>{$$(".system-btn").forEach(x=>x.classList.remove("active"));b.classList.add("active");$("#systemInfo").innerHTML="<b>"+name+"</b><br>"+desc;});$("#systemList").append(b);if(i===0)b.click();});
+$$(".lesson").forEach(b=>b.addEventListener("click",()=>{$("#lessonInfo").innerHTML="<b>"+b.dataset.lesson+"</b><br>Lesson outline: key terms, core structures, normal functions, clinical relevance and a short knowledge check. Detailed reviewed lesson material will be added in the academy content phase.";}));
+$("#charName").addEventListener("input",e=>$("#avatarName").textContent=e.target.value||"New character");
+$("#saveCharacter").addEventListener("click",()=>{const c={name:$("#charName").value||"New character",presentation:$("#presentation").value,style:$("#artStyle").value,outfit:$("#outfit").value};localStorage.setItem("hv_character",JSON.stringify(c));$("#characterStatus").textContent="Saved in this browser. It is not synced to an account.";});
+function renderPosts(){const feed=$("#feed");feed.innerHTML="";if(!state.posts.length){feed.innerHTML='<div class="empty-state"><h3>No preview posts yet</h3><p>Write a short learning note above to test the local feed.</p></div>';return;}state.posts.slice().reverse().forEach(p=>{const el=document.createElement("article");el.className="post";const meta=document.createElement("small");meta.textContent="Local preview · "+new Date(p.time).toLocaleString();const body=document.createElement("p");body.textContent=p.text;el.append(meta,body);feed.append(el);});}
+$("#publishPost").addEventListener("click",()=>{const text=$("#postText").value.trim();if(!text)return;state.posts.push({text,time:Date.now()});localStorage.setItem("hv_posts",JSON.stringify(state.posts));$("#postText").value="";renderPosts();});
+function showAuth(){ $("#authModal").classList.remove("hidden");$("#authMessage").textContent=state.client?"Use your email and password.":"Add the Supabase project URL and anon key in config.js to enable account authentication."; }
+$("#accountBtn").addEventListener("click",showAuth);$("#closeModal").addEventListener("click",()=>$("#authModal").classList.add("hidden"));$("#authModal").addEventListener("click",e=>{if(e.target.id==="authModal")$("#authModal").classList.add("hidden")});
+$$(".tab").forEach(t=>t.addEventListener("click",()=>{state.authMode=t.dataset.auth;$$(".tab").forEach(x=>x.classList.toggle("active",x===t));$("#authSubmit").textContent=state.authMode==="login"?"Sign in":"Create account";$("#authPassword").autocomplete=state.authMode==="login"?"current-password":"new-password";}));
+function renderAccount(){const name=state.user?.email|| (state.guest?"Guest explorer":"Not signed in");$("#accountBtn").textContent=state.user?"Account":state.guest?"Guest mode":"Sign in";$("#profileName").textContent=name;$("#profileEmail").textContent=state.user?.email||"Guest mode · this browser only";$("#sessionText").textContent=state.user?"Authenticated account session.":"You are browsing as a local guest. Guest data may be lost if browser storage is cleared.";$("#connection").textContent=state.client?"● Supabase configured":"● Demo mode";}
+async function init(){const cfg=window.HV_CONFIG||{};if(cfg.supabaseUrl&&cfg.supabaseAnonKey&&window.supabase){try{state.client=window.supabase.createClient(cfg.supabaseUrl,cfg.supabaseAnonKey);const {data}=await state.client.auth.getSession();state.user=data.session?.user||null;state.client.auth.onAuthStateChange((_event,session)=>{state.user=session?.user||null;state.guest=false;localStorage.removeItem("hv_guest");renderAccount();});}catch(e){console.error(e);}}renderAccount();renderPosts();}
+$("#authForm").addEventListener("submit",async e=>{e.preventDefault();const email=$("#authEmail").value.trim(),password=$("#authPassword").value; if(!state.client){$("#authMessage").textContent="Supabase configured nahi hai. config.js mein Project URL aur anon/public key add karein.";return;}$("#authSubmit").disabled=true;$("#authMessage").textContent="Please wait…";try{const result=state.authMode==="signup"?await state.client.auth.signUp({email,password}):await state.client.auth.signInWithPassword({email,password});if(result.error)throw result.error;if(state.authMode==="signup"&&!result.data.session){$("#authMessage").textContent="Account request received. Check your email for confirmation, then sign in.";return;}state.user=result.data.user;state.guest=false;localStorage.removeItem("hv_guest");$("#authModal").classList.add("hidden");renderAccount();}catch(err){$("#authMessage").textContent=err.message||"Authentication failed.";}finally{$("#authSubmit").disabled=false;}});
+$("#guestBtn").addEventListener("click",()=>{state.guest=true;state.user=null;localStorage.setItem("hv_guest","yes");$("#authModal").classList.add("hidden");renderAccount();});
+$("#signOut").addEventListener("click",async()=>{if(state.client&&state.user)await state.client.auth.signOut();state.user=null;state.guest=false;localStorage.removeItem("hv_guest");renderAccount();});
+if("serviceWorker" in navigator && location.protocol.startsWith("http"))window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(()=>{}));
+init();
+})();
